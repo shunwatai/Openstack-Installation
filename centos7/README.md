@@ -169,7 +169,7 @@ Create the Identity service API endpoints:
 
 3.  This guide uses a service project that contains a unique user for each service that you add to your environment. Create the service project:
 
-	# openstack project create --domain default --description "Service Project" service
+		# openstack project create --domain default --description "Service Project" service
 
 4. Regular (non-admin) tasks should use an unprivileged project and user. As an example, this guide creates the demo project and user.
 
@@ -547,11 +547,11 @@ If this command returns a value of zero, your compute node does not support hard
 
 1. Source the admin credentials to gain access to admin-only CLI commands:
 
-	# source admin-openrc
+		# source admin-openrc
 
 2. List service components to verify successful launch and registration of each process:
 
-	# openstack compute service list
+		# openstack compute service list
 
 ---
 
