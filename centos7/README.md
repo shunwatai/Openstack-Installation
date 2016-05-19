@@ -548,7 +548,7 @@ If this command returns a value of zero, your compute node does not support hard
 1. Source the admin credentials to gain access to admin-only CLI commands:
 
 	# source admin-openrc
-	
+
 2. List service components to verify successful launch and registration of each process:
 
 	# openstack compute service list
@@ -565,36 +565,36 @@ If this command returns a value of zero, your compute node does not support hard
 		GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' IDENTIFIED BY '<NEUTRON_DBPASS>';
 		GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' IDENTIFIED BY '<NEUTRON_DBPASS>';
 		exit
-		
+
 2. Source the admin credentials to gain access to admin-only CLI commands:
 
 		# source admin-openrc
-	
+
 3. To create the service credentials, complete these steps:
 - Create the neutron user:
 
 		# openstack user create --domain default --password-prompt neutron
-	
+
 - Add the admin role to the neutron user:
 
 		# openstack role add --project service --user neutron admin
-	
+
 - Create the neutron service entity:
 
 		# openstack service create --name neutron --description "OpenStack Networking" network
-	
+
 4. Create the Networking service API endpoints:
 
 		# openstack endpoint create --region RegionOne network public http://controller:9696
 		# openstack endpoint create --region RegionOne network internal http://controller:9696
 		# openstack endpoint create --region RegionOne network admin http://controller:9696
-		
+
 ## Networking Option 1: Provider networks
 
 ### Install and Configure the components
 
 	# yum install -y openstack-neutron openstack-neutron-ml2 openstack-neutron-linuxbridge ebtables
-	
+
 edit ```/etc/neutron/neutron.conf```
 
 	# cp /etc/neutron/neutron.conf /etc/neutron/neutron.conf.bak
@@ -602,22 +602,24 @@ edit ```/etc/neutron/neutron.conf```
 	[DEFAULT]
 	...
 	core_plugin = ml2
-	service_plugins =
+	service_plugins = router
 	rpc_backend = rabbit
 	auth_strategy = keystone
+	dhcp_agent_notification = True
+	allow_overlapping_ips = True
 	notify_nova_on_port_status_changes = True
 	notify_nova_on_port_data_changes = True
-	
+
 	[database]
 	...
-	connection = mysql+pymysql://neutron:<NEUTRON_DBPASS>@controller/neutron	
+	connection = mysql+pymysql://neutron:<NEUTRON_DBPASS>@controller/neutron
 
 	[oslo_messaging_rabbit]
 	...
 	rabbit_host = controller
 	rabbit_userid = openstack
 	rabbit_password = <RABBIT_PASS>
-		
+
 	[keystone_authtoken]
 	...
 	auth_uri = http://controller:5000
@@ -629,7 +631,7 @@ edit ```/etc/neutron/neutron.conf```
 	project_name = service
 	username = neutron
 	password = <NEUTRON_PASS>
-	
+
 	[nova]
 	...
 	auth_url = http://controller:35357
@@ -640,11 +642,11 @@ edit ```/etc/neutron/neutron.conf```
 	project_name = service
 	username = nova
 	password = <NOVA_PASS>
-	
+
 	[oslo_concurrency]
 	...
 	lock_path = /var/lib/neutron/tmp
-	
+
 ### Configure the Modular Layer 2 (ML2) plug-in
 edit ```/etc/neutron/plugins/ml2/ml2_conf.ini```
 
@@ -652,19 +654,21 @@ edit ```/etc/neutron/plugins/ml2/ml2_conf.ini```
 	# vim /etc/neutron/plugins/ml2/ml2_conf.ini
 	[ml2]
 	...
-	type_drivers = flat,vlan
+	type_drivers = flat,vlan,gre,vxlan
 	tenant_network_types =
-	mechanism_drivers = linuxbridge
+	mechanism_drivers = openvswitch,l2population
 	extension_drivers = port_security
-	
+	firewall_driver = neutron.agent.linux.iptables_firewall.OVSHybridIptablesFirewallDriver
+	enable_ipset = True
+
 	[ml2_type_flat]
 	...
 	flat_networks = provider
-	
+
 	[securitygroup]
 	...
 	enable_ipset = True
-	
+
 ### Configure the Linux bridge agent
 edit ```/etc/neutron/plugins/ml2/linuxbridge_agent.ini```
 
@@ -672,15 +676,15 @@ edit ```/etc/neutron/plugins/ml2/linuxbridge_agent.ini```
 	# vim /etc/neutron/plugins/ml2/linuxbridge_agent.ini
 	[linux_bridge]
 	physical_interface_mappings = provider:<PROVIDER_INTERFACE_NAME(eth#)>
-	
+
 	[vxlan]
 	enable_vxlan = False
-	
+
 	[securitygroup]
 	...
 	enable_security_group = True
 	firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
-	
+
 ### Configure the DHCP agent
 edit ```/etc/neutron/dhcp_agent.ini```
 
@@ -707,6 +711,12 @@ Replace METADATA_SECRET with a suitable secret for the metadata proxy.
 ## Configure Compute to use Networking
 
 	# vim /etc/nova/nova.conf
+	[DEFAULT]
+	...
+	use_neutron = True
+	linuxnet_interface_driver = nova.network.linux_net.LinuxOVSInterfaceDriver
+	firewall_driver = nova.virt.firewall.NoopFirewallDriver
+
 	[neutron]
 	...
 	url = http://controller:9696
@@ -723,14 +733,14 @@ Replace METADATA_SECRET with a suitable secret for the metadata proxy.
 	metadata_proxy_shared_secret = METADATA_SECRET
 
 Replace METADATA_SECRET with the secret you chose for the metadata proxy.
-	
+
 ## Finalize installation
 
 	# ln -s /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugin.ini
-	
+
 	# su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf \
     --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
-  
+
 	# systemctl restart openstack-nova-api.service
 	# systemctl enable neutron-server.service \
 	neutron-linuxbridge-agent.service neutron-dhcp-agent.service \
@@ -743,12 +753,49 @@ Replace METADATA_SECRET with the secret you chose for the metadata proxy.
 Source the ```admin``` credentials to gain access to admin-only CLI commands:
 
 	# source admin-openrc
-	
+
 List loaded extensions to verify successful launch of the neutron-server process:
 
 	# neutron ext-list
-	
+
 The output should indicate three agents on the controller node and one agent on each compute node.
+
+## Create Neutron Network (FLAT)
+
+Change some settings
+
+	# ovs-vsctl add-br br-eth1
+	# ovs-vsctl add-port br-eth1 eth1
+	# vim /etc/neutron/plugins/ml2/ml2_conf.ini
+	[ml2_type_flat]
+	flat_networks = provider
+
+	# vim /etc/neutron/plugins/ml2/openvswitch_agent.ini
+	[ovs]
+	bridge_mappings = provider:br-eth1
+	systemctl restart neutron-openvswitch-agent
+
+Create the network
+
+	tenantID=`openstack project list | grep service | awk '{print $2}'`
+	# neutron net-create --tenant-id $tenantID sharednet1 \
+	  --shared --provider:network_type flat --provider:physical_network provider
+
+Add subnet
+
+	# neutron subnet-create \
+	  --tenant-id $tenantID --gateway 192.168.238.157 --dns-nameserver 8.8.8.8 \
+	  --allocation-pool start=192.168.238.200,end=192.168.238.250 sharednet1 192.168.238.0/24
+
+Check added network
+
+	# neutron net-list
+
+Configure security settings for access with SSH and ICMP
+
+	# neutron security-group-list
+	# neutron security-group-rule-create --direction ingress --protocol icmp <ID>
+	# neutron security-group-rule-create --direction ingress --protocol tcp --port_range_min 22 --port_range_max 22 <ID>
 
 ## Next steps
 
@@ -761,14 +808,14 @@ Your OpenStack environment now includes the core components necessary to launch 
 1. Install the packages:
 
 		# yum install -y openstack-dashboard
-	
+
 2. edit ```/etc/openstack-dashboard/local_settings```
 
 		# cp /etc/openstack-dashboard/local_settings /etc/openstack-dashboard/local_settings.bak
 		# vim /etc/openstack-dashboard/local_settings
 		OPENSTACK_HOST = "controller"
 		ALLOWED_HOSTS = ['*', ]
-		
+
 		SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 
 		CACHES = {
@@ -777,21 +824,21 @@ Your OpenStack environment now includes the core components necessary to launch 
 				 'LOCATION': 'controller:11211',
 			}
 		}
-		
+
 		OPENSTACK_KEYSTONE_URL = "http://%s:5000/v3" % OPENSTACK_HOST
-		
+
 		OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT = True
-		
+
 		OPENSTACK_API_VERSIONS = {
 			"identity": 3,
 			"image": 2,
 			"volume": 2,
 		}
-		
+
 		OPENSTACK_KEYSTONE_DEFAULT_DOMAIN = "default"
-		
+
 		OPENSTACK_KEYSTONE_DEFAULT_ROLE = "user"
-		
+
 		OPENSTACK_NEUTRON_NETWORK = {
 			...
 			'enable_router': False,
@@ -803,6 +850,90 @@ Your OpenStack environment now includes the core components necessary to launch 
 			'enable_vpn': False,
 			'enable_fip_topology_check': False,
 		}
-		
+
 		TIME_ZONE = "Asia/Hong_Kong"
+
+3. Restart the service
+
+		# systemctl restart httpd.service memcached.service
+
+4. Verify operation
+
+open a web browser with URL: ```http://<Server IP>/dashboard```
+
+Authenticate using ```admin``` or ```demo``` user and ```default``` domain credentials.
+
+Now read [Next steps](http://docs.openstack.org/mitaka/install-guide-rdo/horizon-next-steps.html) for further installation
+
+# Data processing - Sahara
+## installation & configuration
+1. install required packages:
+
+		# yum install -y gcc yum install openstack-sahara python-tox libffi-devel openssl-devel python-pip
+		####For ubuntu it goes like: sudo apt-get install python-cffi
+
+2. Database setup
+		# mysql -uroot -p
+		CREATE DATABASE sahara;
+		GRANT ALL PRIVILEGES ON sahara.* TO 'sahara'@'localhost' IDENTIFIED BY '<Sahara_PASS>';
+		GRANT ALL PRIVILEGES ON sahara.* TO 'sahara'@'%' IDENTIFIED BY '<Sahara_PASS>';
+		flush privileges;
+		exit
+
+3. edit config file
+
+		# cp /etc/sahara/sahara.conf /etc/sahara/sahara.conf.bak
+		# vim /etc/sahara/sahara.conf
+		[DEFAULT]
+		use_neutron=true
+		[database]
+		connection=mysql://sahara:mw123456@controller/sahara
+		[keystone_authtoken]
+		auth_uri=http://127.0.0.1:5000/v2.0/
+		identity_uri=http://127.0.0.1:35357/
+		admin_user=admin
+		admin_password=mw123456
+		admin_tenant_name=admin
+
+4. If you use Sahara with MySQL database, then for storing big Job Binaries in Sahara Internal Database you must configure size of max allowed packet. Edit ```my.cnf``` and change parameter:
+
+		# vim /etc/my.cnf
+		[mysqld]
+		...
+		max_allowed_packet          = 256M
+
+		# systemctl restart mariadb
+
+5. Create database schema:
+
+		# sahara-db-manage --config-file /etc/sahara/sahara.conf upgrade head
+
+## setup dashboard
+1. install Dashboard UI
+
+		# pip install --upgrade pip
+		# pip install --upgrade pbr
+		# pip install http://tarballs.openstack.org/sahara-dashboard/sahara-dashboard-stable-mitaka.tar.gz
+
+3. edit ```local_settings```
+
+		# vim /etc/openstack-dashboard/local_settings
+		SAHARA_USE_NEUTRON = True
+
+4. define Sahara endpoint in Keystone. The endpoint type must be data_processing.
+
+		# openstack service create --name sahara --description "Sahara Data Processing" data_processing
+
+		# openstack endpoint create --region RegionOne data_processing public http://controller:8386/v1.1/%\(tenant_id\)s
+		# openstack endpoint create --region RegionOne data_processing internal http://controller:8386/v1.1/%\(tenant_id\)s
+		# openstack endpoint create --region RegionOne data_processing admin http://controller:8386/v1.1/%\(tenant_id\)s
+
+		# openstack user create --domain default --password mw123456 sahara
+		# openstack role add --project service --user sahara admin
+
+5. Start Sahara:
+
+		# ln -s /usr/lib/python2.7/site-packages/sahara_dashboard/enabled/* /usr/share/openstack-dashboard/openstack_dashboard/local/enabled/
+		# systemctl enable openstack-sahara-all
+		# systemctl restart openstack-sahara-all
 
