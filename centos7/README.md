@@ -349,6 +349,7 @@ Start the Image services and configure them to start when the system boots
 
 1. download a src image:
 
+		# cd /tmp
 		# wget http://download.cirros-cloud.net/0.3.4/cirros-0.3.4-x86_64-disk.img
 
 2. Upload the image to the Image service using the QCOW2 disk format, bare container format, and public visibility so all projects can access it:
@@ -541,7 +542,7 @@ If this command returns a value of zero, your compute node does not support hard
 4. Start the Compute service including its dependencies and configure them to start automatically when the system boots:
 
 		# systemctl enable libvirtd.service openstack-nova-compute.service
-		# systemctl start libvirtd.service openstack-nova-compute.service
+		# systemctl restart libvirtd.service openstack-nova-compute.service
 
 ## Verify operation
 
@@ -658,7 +659,7 @@ edit ```/etc/neutron/plugins/ml2/ml2_conf.ini```
 	tenant_network_types =
 	mechanism_drivers = openvswitch,l2population
 	extension_drivers = port_security
-	firewall_driver = neutron.agent.linux.iptables_firewall.OVSHybridIptablesFirewallDriver
+
 	enable_ipset = True
 
 	[ml2_type_flat]
@@ -667,6 +668,7 @@ edit ```/etc/neutron/plugins/ml2/ml2_conf.ini```
 
 	[securitygroup]
 	...
+	firewall_driver = neutron.agent.linux.iptables_firewall.OVSHybridIptablesFirewallDriver
 	enable_ipset = True
 
 ### Configure the Linux bridge agent
@@ -692,7 +694,7 @@ edit ```/etc/neutron/dhcp_agent.ini```
 	# vim /etc/neutron/dhcp_agent.ini
 	[DEFAULT]
 	...
-	interface_driver = neutron.agent.linux.interface.BridgeInterfaceDriver
+	interface_driver = neutron.agent.linux.interface.OVSInterfaceDriver
 	dhcp_driver = neutron.agent.linux.dhcp.Dnsmasq
 	enable_isolated_metadata = True
 
@@ -911,7 +913,6 @@ Now read [Next steps](http://docs.openstack.org/mitaka/install-guide-rdo/horizon
 ## setup dashboard
 1. install Dashboard UI
 
-		# pip install --upgrade pip
 		# pip install --upgrade pbr
 		# pip install http://tarballs.openstack.org/sahara-dashboard/sahara-dashboard-stable-mitaka.tar.gz
 
@@ -922,11 +923,11 @@ Now read [Next steps](http://docs.openstack.org/mitaka/install-guide-rdo/horizon
 
 4. define Sahara endpoint in Keystone. The endpoint type must be data_processing.
 
-		# openstack service create --name sahara --description "Sahara Data Processing" data_processing
+		# openstack service create --name sahara --description "Sahara Data Processing" data-processing
 
-		# openstack endpoint create --region RegionOne data_processing public http://controller:8386/v1.1/%\(tenant_id\)s
-		# openstack endpoint create --region RegionOne data_processing internal http://controller:8386/v1.1/%\(tenant_id\)s
-		# openstack endpoint create --region RegionOne data_processing admin http://controller:8386/v1.1/%\(tenant_id\)s
+		# openstack endpoint create --region RegionOne data-processing public http://controller:8386/v1.1/%\(tenant_id\)s
+		# openstack endpoint create --region RegionOne data-processing internal http://controller:8386/v1.1/%\(tenant_id\)s
+		# openstack endpoint create --region RegionOne data-processing admin http://controller:8386/v1.1/%\(tenant_id\)s
 
 		# openstack user create --domain default --password mw123456 sahara
 		# openstack role add --project service --user sahara admin
